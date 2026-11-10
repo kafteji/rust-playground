@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use core::mem::MaybeUninit;
+use core::{mem::MaybeUninit, result::Result};
 
 pub struct Queue<T, const SIZE: usize> {
     head: usize,
@@ -30,22 +30,28 @@ impl<T, const SIZE: usize> Queue<T, SIZE> {
         self.size
     }
 
-    fn push(&mut self, elem: T) -> () {
-        assert!(
-            self.size + 1 <= self.capacity,
-            "cannot push to queue because it is full."
-        );
+    fn full(&self) -> bool {
+        self.size == self.capacity
+    }
+
+    fn push(&mut self, elem: T) -> Result<(), T> {
+        if (self.full()) {
+            return Err(elem);
+        }
         self.buffer[self.head].write(elem);
         self.head = (self.head + 1) % self.capacity;
         self.size += 1;
+        Ok(())
     }
 
-    fn pop(&mut self) -> T {
-        assert!(self.size > 0, "cannot pop from queue because it is empty.");
+    fn pop(&mut self) -> Option<T> {
+        if (self.empty()) {
+            return None;
+        }
         let elem: T = unsafe { self.buffer[self.tail].assume_init_read() };
         self.tail = (self.tail + 1) % self.capacity;
         self.size -= 1;
-        elem
+        Some(elem)
     }
 }
 
@@ -70,20 +76,21 @@ mod queue_tests {
     }
 
     #[test]
-    #[should_panic]
     fn pop_an_empty_queue() {
         let mut q: Queue<u8, 8> = Queue::new();
         let result = q.pop();
+        assert_eq!(result, None);
     }
 
     #[test]
     fn push_and_pop_an_element() {
         let mut q: Queue<u8, 8> = Queue::new();
         let pushed_elem: u8 = 0xAA;
-        q.push(pushed_elem);
+        let result = q.push(pushed_elem);
+        assert_eq!(result, Ok(()));
         assert_eq!(q.size(), 1);
         let popped_elem = q.pop();
-        assert_eq!(pushed_elem, popped_elem);
+        assert_eq!(pushed_elem, popped_elem.unwrap());
         assert!(q.empty());
     }
 
@@ -94,18 +101,18 @@ mod queue_tests {
         q.push(pushed_string);
         assert_eq!(q.size(), 1);
         let popped_string = q.pop();
-        assert_eq!(popped_string, String::from("Hello"));
+        assert_eq!(popped_string.unwrap(), String::from("Hello"));
     }
 
     #[test]
-    #[should_panic]
     fn push_an_element_to_a_full_queue() {
         let mut q: Queue<u8, 4> = Queue::new();
         for i in 0..4 {
             q.push(i);
         }
         assert_eq!(q.size(), 4);
-        q.push(5);
+        let result = q.push(5);
+        assert_eq!(result, Err(5));
     }
 
     #[test]
@@ -116,7 +123,7 @@ mod queue_tests {
         }
         assert_eq!(q.size(), 4);
         let x = q.pop();
-        assert_eq!(x, 0);
+        assert_eq!(x.unwrap(), 0);
         assert_eq!(q.size(), 3);
         q.push(5);
         assert_eq!(q.size(), 4);
